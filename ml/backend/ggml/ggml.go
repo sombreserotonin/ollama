@@ -328,6 +328,10 @@ func (c Context) Zeros(dtype ml.DType, shape ...int) ml.Tensor {
 		t = C.ggml_new_tensor(c.ctx, C.GGML_TYPE_F32, C.int(len(shape)), shapeToGGML(shape))
 	case ml.DTypeF16:
 		t = C.ggml_new_tensor(c.ctx, C.GGML_TYPE_F16, C.int(len(shape)), shapeToGGML(shape))
+	case ml.DTypeQ80:
+		t = C.ggml_new_tensor(c.ctx, C.GGML_TYPE_Q8_0, C.int(len(shape)), shapeToGGML(shape))
+	case ml.DTypeQ40:
+		t = C.ggml_new_tensor(c.ctx, C.GGML_TYPE_Q4_0, C.int(len(shape)), shapeToGGML(shape))
 	case ml.DTypeI32:
 		t = C.ggml_new_tensor(c.ctx, C.GGML_TYPE_I32, C.int(len(shape)), shapeToGGML(shape))
 	default:
@@ -437,6 +441,10 @@ func (t *Tensor) DType() ml.DType {
 		return ml.DTypeF32
 	case C.GGML_TYPE_F16:
 		return ml.DTypeF16
+	case C.GGML_TYPE_Q8_0:
+		return ml.DTypeQ80
+	case C.GGML_TYPE_Q4_0:
+		return ml.DTypeQ40
 	case C.GGML_TYPE_I32:
 		return ml.DTypeI32
 	default:
