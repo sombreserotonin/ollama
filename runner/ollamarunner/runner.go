@@ -619,15 +619,13 @@ func (s *Server) completion(w http.ResponseWriter, r *http.Request) {
 				if seq.doneReason == "limit" {
 					doneReason = "length"
 				}
-				promptDur := common.ParseDurationMs(float64(seq.startGenerationTime.Sub(seq.startProcessingTime).Milliseconds()))
-				evalDur := common.ParseDurationMs(float64(time.Since(seq.startGenerationTime).Milliseconds()))
 				if err := json.NewEncoder(w).Encode(&llm.CompletionResponse{
 					Done:               true,
 					DoneReason:         doneReason,
 					PromptEvalCount:    seq.numPromptInputs,
-					PromptEvalDuration: promptDur,
+					PromptEvalDuration: seq.startGenerationTime.Sub(seq.startProcessingTime),
 					EvalCount:          seq.numPredicted,
-					EvalDuration:       evalDur,
+					EvalDuration:       time.Since(seq.startGenerationTime),
 				}); err != nil {
 					http.Error(w, fmt.Sprintf("failed to encode final response: %v", err), http.StatusInternalServerError)
 				}
