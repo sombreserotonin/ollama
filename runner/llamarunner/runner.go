@@ -732,7 +732,7 @@ func (s *Server) embeddings(w http.ResponseWriter, r *http.Request) {
 func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(&llm.ServerStatusResp{
-		Status:   s.status.ToString(),
+		Status:   s.status.String(),
 		Progress: s.progress,
 	}); err != nil {
 		http.Error(w, fmt.Sprintf("failed to encode response: %v", err), http.StatusInternalServerError)

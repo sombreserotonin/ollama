@@ -442,7 +442,7 @@ const ( // iota is reset to 0
 	ServerStatusError
 )
 
-func (s ServerStatus) ToString() string {
+func (s ServerStatus) String() string {
 	switch s {
 	case ServerStatusReady:
 		return "llm server ready"
@@ -502,11 +502,11 @@ func (s *llmServer) getServerStatus(ctx context.Context) (ServerStatus, error) {
 	}
 
 	switch status.Status {
-	case ServerStatusReady.ToString():
+	case ServerStatusReady.String():
 		return ServerStatusReady, nil
-	case ServerStatusNoSlotsAvailable.ToString():
+	case ServerStatusNoSlotsAvailable.String():
 		return ServerStatusNoSlotsAvailable, nil
-	case ServerStatusLoadingModel.ToString():
+	case ServerStatusLoadingModel.String():
 		s.loadProgress = status.Progress
 		return ServerStatusLoadingModel, nil
 	default:
@@ -585,7 +585,7 @@ func (s *llmServer) WaitUntilRunning(ctx context.Context) error {
 		status, _ := s.getServerStatus(ctx)
 		if lastStatus != status && status != ServerStatusReady {
 			// Only log on status changes
-			slog.Info("waiting for server to become available", "status", status.ToString())
+			slog.Info("waiting for server to become available", "status", status.String())
 		}
 		switch status {
 		case ServerStatusReady:
@@ -599,7 +599,7 @@ func (s *llmServer) WaitUntilRunning(ctx context.Context) error {
 				slog.Debug(fmt.Sprintf("model load progress %0.2f", s.loadProgress))
 				stallTimer = time.Now().Add(stallDuration)
 			} else if !fullyLoaded && int(s.loadProgress*100.0) >= 100 {
-				slog.Debug("model load completed, waiting for server to become available", "status", status.ToString())
+				slog.Debug("model load completed, waiting for server to become available", "status", status.String())
 				stallTimer = time.Now().Add(stallDuration)
 				fullyLoaded = true
 			}
@@ -707,7 +707,7 @@ func (s *llmServer) Completion(ctx context.Context, req CompletionRequest, fn fu
 	if err != nil {
 		return err
 	} else if status != ServerStatusReady {
-		return fmt.Errorf("unexpected server status: %s", status.ToString())
+		return fmt.Errorf("unexpected server status: %s", status.String())
 	}
 
 	// Handling JSON marshaling with special characters unescaped.
@@ -839,7 +839,7 @@ func (s *llmServer) Embedding(ctx context.Context, input string) ([]float32, err
 	if err != nil {
 		return nil, err
 	} else if status != ServerStatusReady {
-		return nil, fmt.Errorf("unexpected server status: %s", status.ToString())
+		return nil, fmt.Errorf("unexpected server status: %s", status.String())
 	}
 
 	data, err := json.Marshal(EmbeddingRequest{Content: input})
@@ -897,7 +897,7 @@ func (s *llmServer) Tokenize(ctx context.Context, content string) ([]int, error)
 	if err != nil {
 		return nil, err
 	} else if status != ServerStatusReady && status != ServerStatusNoSlotsAvailable {
-		return nil, fmt.Errorf("unexpected server status: %s", status.ToString())
+		return nil, fmt.Errorf("unexpected server status: %s", status.String())
 	}
 
 	data, err := json.Marshal(TokenizeRequest{Content: content})
@@ -969,7 +969,7 @@ func (s *llmServer) Detokenize(ctx context.Context, tokens []int) (string, error
 	if err != nil {
 		return "", err
 	} else if status != ServerStatusReady && status != ServerStatusNoSlotsAvailable {
-		return "", fmt.Errorf("unexpected server status: %s", status.ToString())
+		return "", fmt.Errorf("unexpected server status: %s", status.String())
 	}
 
 	data, err := json.Marshal(DetokenizeRequest{Tokens: tokens})
