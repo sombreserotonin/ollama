@@ -731,7 +731,7 @@ func (s *Server) embeddings(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(&llm.ServerStatusResp{
+	if err := json.NewEncoder(w).Encode(&llm.ServerStatusResponse{
 		Status:   s.status.String(),
 		Progress: s.progress,
 	}); err != nil {

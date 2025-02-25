@@ -457,7 +457,22 @@ func (s ServerStatus) String() string {
 	}
 }
 
-type ServerStatusResp struct {
+func NewServerStatus(r ServerStatusResponse) ServerStatus {
+	switch r.Status {
+	case "llm server ready":
+		return ServerStatusReady
+	case "llm busy - no slots available":
+		return ServerStatusNoSlotsAvailable
+	case "llm server loading model":
+		return ServerStatusLoadingModel
+	case "llm server not responding":
+		return ServerStatusNotResponding
+	default:
+		return ServerStatusError
+	}
+}
+
+type ServerStatusResponse struct {
 	Status   string  `json:"status"`
 	Progress float32 `json:"progress"`
 }
@@ -496,21 +511,20 @@ func (s *llmServer) getServerStatus(ctx context.Context) (ServerStatus, error) {
 		return ServerStatusError, fmt.Errorf("read health request: %w", err)
 	}
 
-	var status ServerStatusResp
+	var status ServerStatusResponse
 	if err := json.Unmarshal(body, &status); err != nil {
 		return ServerStatusError, fmt.Errorf("health unmarshal encode response: %w", err)
 	}
 
-	switch status.Status {
-	case ServerStatusReady.String():
-		return ServerStatusReady, nil
-	case ServerStatusNoSlotsAvailable.String():
-		return ServerStatusNoSlotsAvailable, nil
-	case ServerStatusLoadingModel.String():
+	result := NewServerStatus(status)
+	switch result {
+	case ServerStatusLoadingModel:
 		s.loadProgress = status.Progress
-		return ServerStatusLoadingModel, nil
+		return result, nil
+	case ServerStatusReady, ServerStatusNoSlotsAvailable:
+		return result, nil
 	default:
-		return ServerStatusError, fmt.Errorf("server error: %+v", status)
+		return result, fmt.Errorf("server error: %+v", status)
 	}
 }
 
