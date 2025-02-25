@@ -496,27 +496,6 @@ func (s *Server) processBatch() error {
 	return nil
 }
 
-func getSamplers(_ llm.CompletionRequest) []sample.Sampler {
-	// TODO(jessegross): Waiting for sampling code
-
-	/*samplingParams.TopK = req.TopK
-	samplingParams.TopP = req.TopP
-	samplingParams.MinP = req.MinP
-	samplingParams.TypicalP = req.TypicalP
-	samplingParams.Temp = req.Temperature
-	samplingParams.RepeatLastN = req.RepeatLastN
-	samplingParams.PenaltyRepeat = req.RepeatPenalty
-	samplingParams.PenaltyFreq = req.FrequencyPenalty
-	samplingParams.PenaltyPresent = req.PresencePenalty
-	samplingParams.Mirostat = req.Mirostat
-	samplingParams.MirostatTau = req.MirostatTau
-	samplingParams.MirostatEta = req.MirostatEta
-	samplingParams.Seed = uint32(req.Seed)
-	samplingParams.Grammar = req.Grammar*/
-
-	return []sample.Sampler{sample.Greedy()}
-}
-
 func (s *Server) completion(w http.ResponseWriter, r *http.Request) {
 	var req llm.CompletionRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
