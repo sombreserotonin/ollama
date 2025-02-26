@@ -41,6 +41,8 @@ type CacheConfig struct {
 	// and return the permuted version via Get. This uses the cache copy operation
 	// to avoid a Contiguous call on the permuted tensor.
 	PermutedV bool
+
+	Padding int
 }
 
 // BackendParams controls how the backend loads and executes models
@@ -56,6 +58,9 @@ type BackendParams struct {
 
 	// TensorSplit is the fraction of the model to offload to each GPU
 	TensorSplit []float32
+
+	// FlashAttention indicates that we should use a fused flash attention kernel
+	FlashAttention bool
 }
 
 var backends = make(map[string]func(*os.File, BackendParams) (Backend, error))

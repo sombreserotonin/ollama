@@ -82,19 +82,23 @@ func NewSWACache(windowSize int32, shift shiftFn) *Causal {
 }
 
 func (c *Causal) Init(backend ml.Backend, dtype ml.DType, capacity int32) {
-	c.DType = dtype
-	c.Capacity = capacity
-	c.cells = make([]cacheCell, capacity)
-	c.cellRanges = make(map[int]cellRange)
-	c.backend = backend
-	c.cacheCtx = backend.NewContext()
-
 	if !c.configSet {
 		if cc, ok := backend.(ml.BackendCacheConfig); ok {
 			c.config = cc.CacheConfig()
 		}
 		c.configSet = true
 	}
+
+	if c.config.Padding == 0 {
+		c.config.Padding = 1
+	}
+
+	c.DType = dtype
+	c.Capacity = int32(ROUND_UP(int(capacity), c.config.Padding))
+	c.cells = make([]cacheCell, c.Capacity)
+	c.cellRanges = make(map[int]cellRange)
+	c.backend = backend
+	c.cacheCtx = backend.NewContext()
 }
 
 func (c *Causal) SetConfig(config ml.CacheConfig) {
@@ -150,6 +154,9 @@ func (c *Causal) StartForward(ctx ml.Context, positions []int32, seqs []int) err
 		c.cellRanges[seq] = seqRange
 	}
 
+	c.curCellRange.min = ROUND_DOWN(c.curCellRange.min, c.config.Padding)
+	c.curCellRange.max = ROUND_UP(c.curCellRange.max, c.config.Padding) - 1
+
 	c.curMask, err = c.buildMask(ctx, positions, seqs)
 
 	return err
@@ -180,24 +187,47 @@ func (c *Causal) findStartLoc() (int, error) {
 	return 0, fmt.Errorf("%w (length: %v)", ErrKvCacheFull, c.Capacity)
 }
 
+func ROUND_DOWN(num, multiple int) int {
+	return num & ^(multiple - 1)
+}
+
+func ROUND_UP(num, multiple int) int {
+	return (num + multiple - 1) & ^(multiple - 1)
+}
+
 // Builds a mask of history x batch indicating whether for each token in the batch the
 // token in the history should apply. This is based on both the sequence and causality (the
 // position of the history is not ahead of the token in the batch).
 func (c *Causal) buildMask(ctx ml.Context, positions []int32, seqs []int) (ml.Tensor, error) {
-	// TODO(jessegross): This does not do padding, which is required for flash attention
-	len := c.curCellRange.max - c.curCellRange.min + 1
-	mask := make([]float32, c.curBatchSize*len)
+	length := c.curCellRange.max - c.curCellRange.min + 1
+	batchSize := ROUND_UP(c.curBatchSize, c.config.Padding)
+	mask := make([]float32, batchSize*length)
 
 	for i := range c.curBatchSize {
 		for j := c.curCellRange.min; j <= c.curCellRange.max; j++ {
 			if !slices.Contains(c.cells[j].sequences, seqs[i]) || c.cells[j].pos > positions[i] ||
 				c.cells[j].pos < positions[i]-c.windowSize {
-				mask[i*len+(j-c.curCellRange.min)] = float32(math.Inf(-1))
+				mask[i*length+(j-c.curCellRange.min)] = float32(math.Inf(-1))
 			}
 		}
 	}
 
-	return ctx.FromFloatSlice(mask, len, c.curBatchSize)
+	for i := c.curBatchSize * length; i < len(mask); i++ {
+		mask[i] = float32(math.Inf(-1))
+	}
+
+	maskTensor, err := ctx.FromFloatSlice(mask, length, batchSize)
+	if err != nil {
+		return nil, err
+	}
+
+	if c.config.Padding > 0 {
+		out := c.cacheCtx.Zeros(ml.DTypeF16, maskTensor.Shape()...)
+		ctx.Forward(maskTensor.Copy(ctx, out))
+		maskTensor = out
+	}
+
+	return maskTensor, nil
 }
 
 func (c *Causal) moveCells(ctx ml.Context, src, dst, len int) {
