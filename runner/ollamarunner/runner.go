@@ -518,18 +518,6 @@ func (s *Server) completion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sampler, err := sample.NewSampler(
-		req.Options.Temperature,
-		req.Options.TopK,
-		req.Options.TopP,
-		req.Options.MinP,
-		req.Options.Seed,
-	)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to create sampler: %v", err), http.StatusInternalServerError)
-		return
-	}
-
 	seq, err := s.NewSequence(req.Prompt, req.Images, NewSequenceParams{
 		numPredict: req.Options.NumPredict,
 		stop:       req.Options.Stop,
