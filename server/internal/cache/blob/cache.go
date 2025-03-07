@@ -414,19 +414,21 @@ func (c *DiskCache) links() iter.Seq2[string, error] {
 }
 
 type checkWriter struct {
-	d    Digest
 	size int64
-	n    int64
-	h    hash.Hash
+	d    Digest
 	f    *os.File
-	err  error
+	h    hash.Hash
+
+	w   io.Writer // underlying writer; set by creator
+	n   int64
+	err error
 
 	testHookBeforeFinalWrite func(*os.File)
 }
 
-func (w *checkWriter) seterr(err error) error {
-	if w.err == nil {
-		w.err = err
+func (cw *checkWriter) seterr(err error) error {
+	if cw.err == nil {
+		cw.err = err
 	}
 	return err
 }
@@ -434,28 +436,32 @@ func (w *checkWriter) seterr(err error) error {
 // Write writes p to the underlying hash and writer. The last write to the
 // underlying writer is guaranteed to be the last byte of p as verified by the
 // hash.
-func (w *checkWriter) Write(p []byte) (int, error) {
-	_, err := w.h.Write(p)
+func (cw *checkWriter) Write(p []byte) (int, error) {
+	if cw.err != nil {
+		return 0, cw.err
+	}
+
+	_, err := cw.h.Write(p)
 	if err != nil {
-		return 0, w.seterr(err)
+		return 0, cw.seterr(err)
 	}
-	nextSize := w.n + int64(len(p))
-	if nextSize == w.size {
+	nextSize := cw.n + int64(len(p))
+	if nextSize == cw.size {
 		// last write. check hash.
-		sum := w.h.Sum(nil)
-		if !bytes.Equal(sum, w.d.sum[:]) {
-			return 0, w.seterr(fmt.Errorf("file content changed underfoot"))
+		sum := cw.h.Sum(nil)
+		if !bytes.Equal(sum, cw.d.sum[:]) {
+			return 0, cw.seterr(fmt.Errorf("file content changed underfoot"))
 		}
-		if w.testHookBeforeFinalWrite != nil {
-			w.testHookBeforeFinalWrite(w.f)
+		if cw.testHookBeforeFinalWrite != nil {
+			cw.testHookBeforeFinalWrite(cw.f)
 		}
 	}
-	if nextSize > w.size {
-		return 0, w.seterr(fmt.Errorf("content exceeds expected size: %d > %d", nextSize, w.size))
+	if nextSize > cw.size {
+		return 0, cw.seterr(fmt.Errorf("content exceeds expected size: %d > %d", nextSize, cw.size))
 	}
-	n, err := w.f.Write(p)
-	w.n += int64(n)
-	return n, w.seterr(err)
+	n, err := cw.w.Write(p)
+	cw.n += int64(n)
+	return n, cw.seterr(err)
 }
 
 // copyNamedFile copies file into name, expecting it to have the given Digest
@@ -493,10 +499,12 @@ func (c *DiskCache) copyNamedFile(name string, file io.Reader, out Digest, size 
 
 	// Copy file to f, but also into h to double-check hash.
 	cw := &checkWriter{
-		d:                        out,
-		size:                     size,
-		h:                        sha256.New(),
-		f:                        f,
+		d:    out,
+		size: size,
+		h:    sha256.New(),
+		f:    f,
+		w:    f,
+
 		testHookBeforeFinalWrite: c.testHookBeforeFinalWrite,
 	}
 	n, err := io.Copy(cw, file)

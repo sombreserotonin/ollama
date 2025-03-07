@@ -14,7 +14,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ollama/ollama/server/internal/cache/blob"
 	"github.com/ollama/ollama/server/internal/client/ollama"
 )
 
@@ -221,10 +220,10 @@ func (s *Local) handleDelete(_ http.ResponseWriter, r *http.Request) error {
 }
 
 type progressUpdateJSON struct {
-	Status    string      `json:"status"`
-	Digest    blob.Digest `json:"digest,omitempty,omitzero"`
-	Total     int64       `json:"total,omitempty,omitzero"`
-	Completed int64       `json:"completed,omitempty,omitzero"`
+	Status    string `json:"status"`
+	Digest    string `json:"digest,omitempty,omitzero"`
+	Total     int64  `json:"total,omitempty,omitzero"`
+	Completed int64  `json:"completed,omitempty,omitzero"`
 }
 
 func (s *Local) handlePull(w http.ResponseWriter, r *http.Request) error {
@@ -246,24 +245,35 @@ func (s *Local) handlePull(w http.ResponseWriter, r *http.Request) error {
 	defer maybeFlush()
 
 	var mu sync.Mutex
-	enc := json.NewEncoder(w)
-	enc.Encode(progressUpdateJSON{Status: "pulling manifest"})
+	progress := make(map[*ollama.Layer]int64)
 
+	t := time.NewTicker(time.Hour) // "unstarted" timer
+	start := sync.OnceFunc(func() { t.Reset(100 * time.Millisecond) })
 	ctx := ollama.WithTrace(r.Context(), &ollama.Trace{
 		Update: func(l *ollama.Layer, n int64, err error) {
 			mu.Lock()
-			defer mu.Unlock()
-
-			// TODO(bmizerany): coalesce these updates; writing per
-			// update is expensive
-			enc.Encode(progressUpdateJSON{
-				Digest:    l.Digest,
-				Status:    "pulling",
-				Total:     l.Size,
-				Completed: n,
-			})
+			progress[l] = n
+			mu.Unlock()
+			if n > 0 {
+				start()
+			}
 		},
 	})
+
+	enc := json.NewEncoder(w)
+	pushUpdate := func() {
+		p := progressUpdateJSON{Digest: p.model()}
+
+		mu.Lock()
+		for l, n := range progress {
+			p.Total += l.Size
+			p.Completed += n
+		}
+		mu.Unlock()
+
+		enc.Encode(p)
+		maybeFlush()
+	}
 
 	done := make(chan error, 1)
 	go func() {
@@ -271,44 +281,26 @@ func (s *Local) handlePull(w http.ResponseWriter, r *http.Request) error {
 		done <- s.Client.Pull(ctx, p.model())
 	}()
 
-	func() {
-		t := time.NewTicker(100 * time.Millisecond)
-		defer t.Stop()
-		for {
-			select {
-			case <-t.C:
-				mu.Lock()
-				maybeFlush()
-				mu.Unlock()
-			case err := <-done:
-				if err != nil {
-					var status string
-					if errors.Is(err, ollama.ErrModelNotFound) {
-						status = fmt.Sprintf("error: model %q not found", p.model())
-						enc.Encode(progressUpdateJSON{Status: status})
-					} else {
-						status = fmt.Sprintf("error: %v", err)
-						enc.Encode(progressUpdateJSON{Status: status})
-					}
-					return
+	for {
+		select {
+		case <-t.C:
+			pushUpdate()
+		case err := <-done:
+			pushUpdate()
+			if err != nil {
+				var status string
+				if errors.Is(err, ollama.ErrModelNotFound) {
+					status = fmt.Sprintf("error: model %q not found", p.model())
+					enc.Encode(progressUpdateJSON{Status: status})
+				} else {
+					status = fmt.Sprintf("error: %v", err)
+					enc.Encode(progressUpdateJSON{Status: status})
 				}
-
-				// These final updates are not strictly necessary, because they have
-				// already happened at this point. Our pull handler code used to do
-				// these steps after, not during, the pull, and they were slow, so we
-				// wanted to provide feedback to users what was happening. For now, we
-				// keep them to not jar users who are used to seeing them. We can phase
-				// them out with a new and nicer UX later. One without progress bars
-				// and digests that no one cares about.
-				enc.Encode(progressUpdateJSON{Status: "verifying layers"})
-				enc.Encode(progressUpdateJSON{Status: "writing manifest"})
-				enc.Encode(progressUpdateJSON{Status: "success"})
-				return
 			}
+			return nil
 		}
-	}()
+	}
 
-	return nil
 }
 
 func decodeUserJSON[T any](r io.Reader) (T, error) {
