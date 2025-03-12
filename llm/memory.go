@@ -120,12 +120,14 @@ func EstimateGPULayers(gpus []discover.GpuInfo, f *ggml.GGML, projectors []strin
 	}
 
 	layers := f.Tensors().GroupLayers()
-	// add one layer worth of memory as a buffer
-	if blk0, ok := layers["blk.0"]; ok {
-		layerSize = blk0.Size()
-	} else {
-		slog.Warn("model missing blk.0 layer size")
+	var maxLayerSize uint64
+	for name, layer := range layers {
+		if strings.HasPrefix(name, "blk.") && layer.Size() > maxLayerSize {
+			maxLayerSize = layer.Size()
+		}
 	}
+
+	layerSize = maxLayerSize
 
 	var kvct string
 	if envconfig.FlashAttention() &&
@@ -218,8 +220,8 @@ func EstimateGPULayers(gpus []discover.GpuInfo, f *ggml.GGML, projectors []strin
 		if blk, ok := layers[fmt.Sprintf("blk.%d", i)]; ok {
 			layerSize = blk.Size()
 			layerSize += kv / f.KV().BlockCount()
+			memoryWeights += blk.Size()
 		}
-		memoryWeights += layerSize
 
 		if opts.NumGPU >= 0 && layerCount >= opts.NumGPU {
 			// Stop allocating on GPU(s) once we hit the users target NumGPU
@@ -376,7 +378,7 @@ func (m MemoryEstimate) LogValue() slog.Value {
 				// memory of the weights
 				"total", format.HumanBytes2(m.memoryWeights),
 				// memory of repeating layers
-				"repeating", format.HumanBytes2(m.memoryWeights-m.memoryLayerOutput),
+				"repeating", format.HumanBytes2(m.memoryWeights),
 				// memory of non-repeating layers
 				"nonrepeating", format.HumanBytes2(m.memoryLayerOutput),
 			),
